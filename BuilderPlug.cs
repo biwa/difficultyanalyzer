@@ -192,10 +192,15 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 		public override void OnActionEnd(CodeImp.DoomBuilder.Actions.Action action)
 		{
 			string[] monitoractions = {
-				"builder_visualedit", "builder_classicedit"
+				"builder_visualedit",
+				"builder_classicedit",
+				"builder_deleteitem",
+				"builder_classicselect",
+				"builder_clearselection",
+				"buildermodes_classicpasteproperties"
 			};
 
-			Debug.Print("Action: " + action.Name);
+			// Debug.Print("##### Action: " + action.Name);
 
 			if(monitoractions.Contains(action.Name))
 				AnalyzeDifficulty();
@@ -207,7 +212,9 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 		public void AnalyzeDifficulty()
 		{
 			Dictionary<int, Dictionary<string, int>> thingcount = new Dictionary<int, Dictionary<string, int>>();
+			List<Thing> things;
 			string[] difficultyflags = new string[] { "1", "2", "4" };
+			long totaltime = 0;
 
 			if (docker == null)
 				return;
@@ -216,6 +223,21 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 			if (General.Interface.ActiveDockerTabName != docker.Title)
 				return;
 			*/
+
+			if (General.Map.Map.SelectedSectorsCount > 0)
+			{
+				things = new List<Thing>();
+
+				foreach (Thing t in General.Map.Map.Things)
+					if (t.Sector != null && t.Sector.Selected)
+						things.Add(t);
+			}
+			else
+			{
+				things = General.Map.Map.Things.ToList();
+			}
+				
+				
 
 			General.Map.Map.BeginAddRemove();
 			Thing comparething = General.Map.Map.CreateThing();
@@ -264,36 +286,36 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 
 			// General.Map.Config.ThingFlagsCompare
 
-			var watch = Stopwatch.StartNew();
-
-			foreach (string df in difficultyflags)
+			foreach (Thing t in things)
 			{
-				foreach (string sf in difficultyflags)
-				{
-					comparething.SetFlag(sf, false);
-				}
+				if (t == comparething) continue;
 
-				comparething.SetFlag(df, true);
+				if (!config.Root.Contains(t.Type.ToString())) continue;
 
-				comparething.SetFlag("16", false); // Multiplayer only
-				comparething.SetFlag("32", false); // Not coop
-				comparething.SetFlag("64", false); // Not Deathmatch
+				
+				if (!thingcount.ContainsKey(t.Type))
+					thingcount.Add(t.Type, new Dictionary<string, int>());
 
-
-				foreach (Thing t in General.Map.Map.Things)
+				foreach (string df in difficultyflags)
 				{
 					bool countthing = false;
 
-					if (t == comparething) continue;
-					if (!config.Root.Contains(t.Type.ToString())) continue;
-
-					if (!thingcount.ContainsKey(t.Type))
-						thingcount.Add(t.Type, new Dictionary<string, int>());
-
 					if (!thingcount[t.Type].ContainsKey(df))
-							thingcount[t.Type].Add(df, 0);
+						thingcount[t.Type].Add(df, 0);
 
-					if (difficultyanalyzer.GameType == 0) { // Single player
+					foreach (string sf in difficultyflags)
+					{
+						comparething.SetFlag(sf, false);
+					}
+
+					comparething.SetFlag(df, true);
+
+					comparething.SetFlag("16", false); // Multiplayer only
+					comparething.SetFlag("32", false); // Not coop
+					comparething.SetFlag("64", false); // Not Deathmatch
+
+					if (difficultyanalyzer.GameType == 0)
+					{ // Single player
 						comparething.SetFlag("16", false); // Multiplayer only
 						comparething.SetFlag("32", false); // Not coop
 						comparething.SetFlag("64", false); // Not Deathmatch
@@ -326,12 +348,10 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 							countthing = true;
 					}
 
-					if(countthing)
+					if (countthing)
 						thingcount[t.Type][df]++;
 				}
 			}
-
-			watch.Stop();
 
 			DataGridView dgv = difficultyanalyzer.table;
 
@@ -455,10 +475,6 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 			General.Map.Map.BeginAddRemove();
 			comparething.Dispose();
 			General.Map.Map.EndAddRemove();
-
-			var elapsed = watch.ElapsedMilliseconds;
-
-			Debug.Print("##### AnalyzeDifficulty: " + elapsed.ToString() + " ms");
 		}
 
 		#endregion
