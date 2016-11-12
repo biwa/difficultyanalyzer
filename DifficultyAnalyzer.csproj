@@ -57,6 +57,7 @@
   </Target>
   -->
   <ItemGroup>
+    <Compile Include="AmmunitionType.cs" />
     <Compile Include="BuilderPlug.cs" />
     <Compile Include="Controls\DifficultyAnalyzer.cs">
       <SubType>UserControl</SubType>
@@ -64,6 +65,9 @@
     <Compile Include="Controls\DifficultyAnalyzer.Designer.cs">
       <DependentUpon>DifficultyAnalyzer.cs</DependentUpon>
     </Compile>
+    <Compile Include="GameMode.cs" />
+    <Compile Include="SkillType.cs" />
+    <Compile Include="Total.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Core\Builder.csproj">
@@ -92,6 +96,6 @@
     <EmbeddedResource Include="Controls\DifficultyAnalyzer.resx">
       <DependentUpon>DifficultyAnalyzer.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\doom.cfg" />
+    <EmbeddedResource Include="Resources\game_doom.cfg" />
   </ItemGroup>
 </Project>

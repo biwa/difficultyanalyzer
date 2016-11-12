@@ -42,10 +42,9 @@ using CodeImp.DoomBuilder.Types;
 using CodeImp.DoomBuilder.Config;
 using CodeImp.DoomBuilder.Data;
 using CodeImp.DoomBuilder.BuilderModes;
-using CodeImp.DoomBuilder.GZBuilder.Geometry;
-using CodeImp.DoomBuilder.Geometry;
 using CodeImp.DoomBuilder.VisualModes;
 using CodeImp.DoomBuilder.Controls;
+using CodeImp.DoomBuilder.GZBuilder.Data;
 
 #endregion
 
@@ -68,12 +67,31 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 		private Configuration config;
 		private DifficultyAnalyzer difficultyanalyzer;
 		private Docker docker;
+		private List<AmmunitionType> ammunitiontypes;
+		private Dictionary<int, SkillType> skilltypes;
+		private List<GameMode> gamemodes;
+		private List<Total> totals;
+		private string mapformat;
+		private string analyzegamemodetitle;
+		private bool configisvalid;
 
 		#endregion
 
 		#region ================== Properties
 
 		public MenusForm MenusForm { get { return menusform; } }
+		public string AnalyzeGameModeTitle { get { return analyzegamemodetitle; } set { analyzegamemodetitle = value; } }
+		public Dictionary<int, SkillType> SkillTypes { get { return skilltypes; } }
+		public bool ConfigIsValid { get { return configisvalid; } }
+
+		#endregion
+
+		#region ================== Constants
+
+		private const int TotalsIndexHealth = 0;
+		private const int TotalsIndexArmor = 1;
+		private const int TotalsIndexEnemyHitpoints = 2;
+		private const int TotalsIndexAmmunition = 3;
 
 		#endregion
 
@@ -122,15 +140,22 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 
 		public override void OnMapOpenEnd()
 		{
-			LoadSettings();
+			configisvalid = LoadSettings();
 
 			if (difficultyanalyzer == null)
 			{
 				difficultyanalyzer = new DifficultyAnalyzer();
-				difficultyanalyzer.Setup();
 				docker = new Docker("difficultyanalyzerdocker", "Difficulty Analyzer", difficultyanalyzer);
 				General.Interface.AddDocker(docker);
 			}
+
+			if (configisvalid)
+			{
+				difficultyanalyzer.Setup(skilltypes);
+				difficultyanalyzer.UpdateGameModes(gamemodes);
+			}
+
+			difficultyanalyzer.ShowUI(configisvalid);
 
 			AnalyzeDifficulty();
 		}
@@ -172,23 +197,6 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 			AnalyzeDifficulty();
 		}
 
-		public override void OnActionBegin(CodeImp.DoomBuilder.Actions.Action action)
-		{
-			base.OnActionBegin(action);
-
-			string[] monitoractions = {
-				"builder_visualedit", "builder_classicedit"
-			};
-
-			//if (monitoractions.Contains(action.Name))
-			{
-				// updateafteraction = true;
-				// updateafteractionname = action.Name;
-			}
-			//else
-			//	updateafteraction = false;
-		}
-
 		public override void OnActionEnd(CodeImp.DoomBuilder.Actions.Action action)
 		{
 			string[] monitoractions = {
@@ -200,8 +208,6 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 				"buildermodes_classicpasteproperties"
 			};
 
-			// Debug.Print("##### Action: " + action.Name);
-
 			if(monitoractions.Contains(action.Name))
 				AnalyzeDifficulty();
 		}
@@ -211,18 +217,12 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 		[BeginAction("difficultyanalyzer")]
 		public void AnalyzeDifficulty()
 		{
-			Dictionary<int, Dictionary<string, int>> thingcount = new Dictionary<int, Dictionary<string, int>>();
+			Dictionary<int, Dictionary<int, int>> thingcount = new Dictionary<int, Dictionary<int, int>>();
 			List<Thing> things;
 			string[] difficultyflags = new string[] { "1", "2", "4" };
-			long totaltime = 0;
 
-			if (docker == null)
+			if (docker == null || configisvalid == false)
 				return;
-
-			/*
-			if (General.Interface.ActiveDockerTabName != docker.Title)
-				return;
-			*/
 
 			if (General.Map.Map.SelectedSectorsCount > 0)
 			{
@@ -236,245 +236,59 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 			{
 				things = General.Map.Map.Things.ToList();
 			}
-				
-				
 
-			General.Map.Map.BeginAddRemove();
-			Thing comparething = General.Map.Map.CreateThing();
-			General.Map.Map.EndAddRemove();
+			Total difficultyratio = new Total("Difficulty ratio", skilltypes.Count);
 
-			Dictionary<string, int> totalhitpoints = new Dictionary<string, int>() {
-				{ difficultyflags[0], 0 },
-				{ difficultyflags[1], 0 },
-				{ difficultyflags[2], 0 }
-			};
+			totals = new List<Total>();
+			totals.Add(new Total("Health", skilltypes.Count));
+			totals.Add(new Total("Armor", skilltypes.Count));
+			totals.Add(new Total("Enemy hitpoints", skilltypes.Count));
 
-			Dictionary<string, int> totalhealth = new Dictionary<string, int>() {
-				{ difficultyflags[0], 0 },
-				{ difficultyflags[1], 0 },
-				{ difficultyflags[2], 0 }
-			};
-
-			Dictionary<string, int> totalarmor = new Dictionary<string, int>() {
-				{ difficultyflags[0], 0 },
-				{ difficultyflags[1], 0 },
-				{ difficultyflags[2], 0 }
-			};
-
-			Dictionary<string, Dictionary<string, int>> totalammo = new Dictionary<string, Dictionary<string, int>>() {
-				{ "bullets", new Dictionary<string, int> {
-					{ difficultyflags[0], 0 },
-					{ difficultyflags[1], 0 },
-					{ difficultyflags[2], 0 }
-				} },
-				{ "shells", new Dictionary<string, int> {
-					{ difficultyflags[0], 0 },
-					{ difficultyflags[1], 0 },
-					{ difficultyflags[2], 0 }
-				} },
-				{ "rockets", new Dictionary<string, int> {
-					{ difficultyflags[0], 0 },
-					{ difficultyflags[1], 0 },
-					{ difficultyflags[2], 0 }
-				} },
-				{ "cells", new Dictionary<string, int> { 
-					{ difficultyflags[0], 0 },
-					{ difficultyflags[1], 0 },
-					{ difficultyflags[2], 0 }
-				} }
-			};
-
-			// General.Map.Config.ThingFlagsCompare
+			foreach (AmmunitionType at in ammunitiontypes)
+				totals.Add(new Total(at.title, skilltypes.Count));
 
 			foreach (Thing t in things)
 			{
-				if (t == comparething) continue;
+				// if (t == comparething) continue;
 
-				if (!config.Root.Contains(t.Type.ToString())) continue;
+				if (!config.SettingExists("things." + t.Type.ToString())) continue;
 
-				
 				if (!thingcount.ContainsKey(t.Type))
-					thingcount.Add(t.Type, new Dictionary<string, int>());
+					thingcount.Add(t.Type, new Dictionary<int, int>());
 
-				foreach (string df in difficultyflags)
+				foreach (KeyValuePair<int, SkillType> kvp in skilltypes)
 				{
-					bool countthing = false;
+					if (!thingcount[t.Type].ContainsKey(kvp.Key))
+						thingcount[t.Type].Add(kvp.Key, 0);
 
-					if (!thingcount[t.Type].ContainsKey(df))
-						thingcount[t.Type].Add(df, 0);
-
-					foreach (string sf in difficultyflags)
+					if (GetGameModeByTitle(analyzegamemodetitle).ThingFlagsMatch(t, kvp.Key))
 					{
-						comparething.SetFlag(sf, false);
+						thingcount[t.Type][kvp.Key]++;
+
+						totals[TotalsIndexHealth].skill[kvp.Key] += config.ReadSetting(string.Format("things.{0}.health", t.Type), 0);
+						totals[TotalsIndexArmor].skill[kvp.Key] += config.ReadSetting(string.Format("things.{0}.armor", t.Type), 0);
+						totals[TotalsIndexEnemyHitpoints].skill[kvp.Key] += config.ReadSetting(string.Format("things.{0}.hitpoints", t.Type), 0);
+
+
+						for (int i = 0; i < ammunitiontypes.Count; i++)
+							totals[TotalsIndexAmmunition + i].skill[kvp.Key] += config.ReadSetting(string.Format("things.{0}.{1}", t.Type, ammunitiontypes[i].name), 0) * kvp.Value.ammomulti;
 					}
-
-					comparething.SetFlag(df, true);
-
-					comparething.SetFlag("16", false); // Multiplayer only
-					comparething.SetFlag("32", false); // Not coop
-					comparething.SetFlag("64", false); // Not Deathmatch
-
-					if (difficultyanalyzer.GameType == 0)
-					{ // Single player
-						comparething.SetFlag("16", false); // Multiplayer only
-						comparething.SetFlag("32", false); // Not coop
-						comparething.SetFlag("64", false); // Not Deathmatch
-
-						if (FlagsOverlap(comparething, t))
-							countthing = true;
-					}
-					else if (difficultyanalyzer.GameType == 1) // Coop
-					{
-						bool insp = false;
-						bool incoop = false;
-
-						// Single player
-						comparething.SetFlag("16", false); // Multiplayer only
-						comparething.SetFlag("32", false); // Not Deathmatch
-						comparething.SetFlag("64", false); // Not Coop
-
-						if (FlagsOverlap(comparething, t))
-							insp = true;
-
-						// Multiplayer only
-						comparething.SetFlag("16", true); // Multiplayer only
-						comparething.SetFlag("32", false); // Not Deathmatch
-						comparething.SetFlag("64", false); // Not coop
-
-						if (FlagsOverlap(comparething, t))
-							incoop = true;
-
-						if (insp || incoop)
-							countthing = true;
-					}
-
-					if (countthing)
-						thingcount[t.Type][df]++;
 				}
 			}
 
-			DataGridView dgv = difficultyanalyzer.table;
-
-			foreach (int type in thingcount.Keys)
+			foreach (KeyValuePair<int, SkillType> kvp in skilltypes)
 			{
-				int hitpoints = config.ReadSetting(type.ToString() + ".hitpoints", 0);
-				totalhitpoints[difficultyflags[0]] += hitpoints * thingcount[type][difficultyflags[0]];
-				totalhitpoints[difficultyflags[1]] += hitpoints * thingcount[type][difficultyflags[1]];
-				totalhitpoints[difficultyflags[2]] += hitpoints * thingcount[type][difficultyflags[2]];
+				double maxdamage = 0.0f;
 
-				int health = config.ReadSetting(type.ToString() + ".health", 0);
-				totalhealth[difficultyflags[0]] += health * thingcount[type][difficultyflags[0]];
-				totalhealth[difficultyflags[1]] += health * thingcount[type][difficultyflags[1]];
-				totalhealth[difficultyflags[2]] += health * thingcount[type][difficultyflags[2]];
+				for (int i = 0; i < ammunitiontypes.Count; i++)
+					maxdamage += totals[TotalsIndexAmmunition + i].skill[kvp.Key] * ammunitiontypes[i].dpu / (100.0f / difficultyanalyzer.PlayerAccuracy);
 
-				int armor = config.ReadSetting(type.ToString() + ".armor", 0);
-				totalarmor[difficultyflags[0]] += armor * thingcount[type][difficultyflags[0]];
-				totalarmor[difficultyflags[1]] += armor * thingcount[type][difficultyflags[1]];
-				totalarmor[difficultyflags[2]] += armor * thingcount[type][difficultyflags[2]];
-	
-				foreach (string ammotype in totalammo.Keys)
-				{
-					int amount = config.ReadSetting(type.ToString() + "." + ammotype, 0);
-
-					totalammo[ammotype][difficultyflags[0]] += amount * thingcount[type][difficultyflags[0]];
-					totalammo[ammotype][difficultyflags[1]] += amount * thingcount[type][difficultyflags[1]];
-					totalammo[ammotype][difficultyflags[2]] += amount * thingcount[type][difficultyflags[2]];
-				}
+				difficultyratio.skill[kvp.Key] = maxdamage > 0.0f ? (float)Math.Round(totals[TotalsIndexEnemyHitpoints].skill[kvp.Key] / maxdamage, 3, MidpointRounding.AwayFromZero) : 0.0f;
 			}
 
-			dgv.Rows.Clear();
+			totals.Add(difficultyratio);
 
-			foreach (string category in categories)
-			{
-				int rowindex = dgv.Rows.Count;
-				string categoryname = "";
-
-				foreach (int type in thingcount.Keys)
-				{
-					// Ignore if the maps doesn't contain things of this type
-					if (thingcount[type][difficultyflags[0]] <= 0 && thingcount[type][difficultyflags[1]] <= 0 && thingcount[type][difficultyflags[2]] <= 0)
-						continue;
-
-					if (config.ReadSetting(type.ToString() + ".category", "") != category)
-						continue;
-
-					categoryname = config.ReadSetting(type.ToString() + ".category", "");
-
-					dgv.Rows.Add(new string[] {
-						config.ReadSetting(type.ToString() + ".name", type.ToString()),
-						thingcount[type][difficultyflags[0]].ToString(),
-						thingcount[type][difficultyflags[1]].ToString(),
-						thingcount[type][difficultyflags[2]].ToString(),
-					});
-				}
-
-				// Add the header to the top of the category, but only if there are things in this category
-				if (rowindex != dgv.Rows.Count)
-				{
-					dgv.Rows.Insert(rowindex, new string[] { categoryname, "", "", "" });
-					dgv.Rows[rowindex].DefaultCellStyle.BackColor = Color.LightGray;
-					// dgv.Rows[rowindex].DefaultCellStyle.Font = new Font(dgv.Rows[0].DefaultCellStyle.Font, FontStyle.Bold);
-				}
-			}
-
-			// Add totals to the grid
-			dgv.Rows.Add(new string[] { "Totals", "", "", "" });
-			dgv.Rows[dgv.Rows.Count-1].DefaultCellStyle.BackColor = Color.LightGray;
-
-			// Hitpoints
-			dgv.Rows.Add(new string[] {
-				"Hitpoints",
-				totalhitpoints[difficultyflags[0]].ToString("n0"),
-				totalhitpoints[difficultyflags[1]].ToString("n0"),
-				totalhitpoints[difficultyflags[2]].ToString("n0")
-			});
-
-			// Ammo
-			foreach (string ammotype in totalammo.Keys)
-			{
-				dgv.Rows.Add(new string[] {
-					CultureInfo.CurrentCulture.TextInfo.ToTitleCase(ammotype),
-					string.Format("{0:n0} ({1:n0})", totalammo[ammotype][difficultyflags[0]], totalammo[ammotype][difficultyflags[0]]*2),
-					totalammo[ammotype][difficultyflags[1]].ToString("n0"),
-					string.Format("{0:n0} ({1:n0})", totalammo[ammotype][difficultyflags[2]], totalammo[ammotype][difficultyflags[2]]*2),
-				});
-			}
-
-			// Health
-			dgv.Rows.Add(new string[] {
-				"Health",
-				totalhealth[difficultyflags[0]].ToString("n0"),
-				totalhealth[difficultyflags[1]].ToString("n0"),
-				totalhealth[difficultyflags[2]].ToString("n0")
-			});
-
-			// Armor
-			dgv.Rows.Add(new string[] {
-				"Armor",
-				totalarmor[difficultyflags[0]].ToString("n0"),
-				totalarmor[difficultyflags[1]].ToString("n0"),
-				totalarmor[difficultyflags[2]].ToString("n0")
-			});
-
-			// Update the ratios
-			float maxdamage = (totalammo["bullets"][difficultyflags[0]] * 10 + totalammo["shells"][difficultyflags[0]] * 70 + totalammo["rockets"][difficultyflags[0]] * 200 + totalammo["cells"][difficultyflags[0]] * 20) * 2 * (difficultyanalyzer.PlayerAccuracy / 100.0f);
-			difficultyanalyzer.ITYTDRatio = maxdamage > 0 ? (float)totalhitpoints[difficultyflags[0]] / maxdamage : 0.0f;
-
-			maxdamage = (totalammo["bullets"][difficultyflags[0]] * 10 + totalammo["shells"][difficultyflags[0]] * 70 + totalammo["rockets"][difficultyflags[0]] * 200 + totalammo["cells"][difficultyflags[0]] * 20) * (difficultyanalyzer.PlayerAccuracy / 100.0f);
-			difficultyanalyzer.HNTRRatio = maxdamage > 0 ? (float)totalhitpoints[difficultyflags[0]] / maxdamage : 0.0f;
-
-			maxdamage = (totalammo["bullets"][difficultyflags[1]] * 10 + totalammo["shells"][difficultyflags[1]] * 70 + totalammo["rockets"][difficultyflags[1]] * 200 + totalammo["cells"][difficultyflags[1]] * 20) * (difficultyanalyzer.PlayerAccuracy / 100.0f);
-			difficultyanalyzer.HMPRatio = maxdamage > 0 ? (float)totalhitpoints[difficultyflags[1]] / maxdamage : 0.0f;
-
-			maxdamage = (totalammo["bullets"][difficultyflags[2]] * 10 + totalammo["shells"][difficultyflags[2]] * 70 + totalammo["rockets"][difficultyflags[2]] * 200 + totalammo["cells"][difficultyflags[2]] * 20) * (difficultyanalyzer.PlayerAccuracy / 100.0f);
-			difficultyanalyzer.UVRatio = maxdamage > 0 ? (float)totalhitpoints[difficultyflags[2]] / maxdamage : 0.0f;
-
-			maxdamage = (totalammo["bullets"][difficultyflags[2]] * 10 + totalammo["shells"][difficultyflags[2]] * 70 + totalammo["rockets"][difficultyflags[2]] * 200 + totalammo["cells"][difficultyflags[2]] * 20) * 2 * (difficultyanalyzer.PlayerAccuracy / 100.0f);
-			difficultyanalyzer.NMRatio = maxdamage > 0 ? (float)totalhitpoints[difficultyflags[2]] / maxdamage : 0.0f;
-
-			General.Map.Map.BeginAddRemove();
-			comparething.Dispose();
-			General.Map.Map.EndAddRemove();
+			difficultyanalyzer.UpdateTable(config, thingcount, totals);
 		}
 
 		#endregion
@@ -482,78 +296,148 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 		#region ================== Methods
 
 		// Use the same settings as the BuilderModes plugin
-		private void LoadSettings()
+		private bool LoadSettings()
 		{
 			Assembly asm = Assembly.GetExecutingAssembly();
+			bool foundconfig = false;
 
 			// Make configuration
 			config = new Configuration();
 
 			categories = new List<string>();
-			
+
+			string gamename = "";
+
+			switch (General.Map.Config.GameType)
+			{
+				case GameType.DOOM:
+					gamename = "doom";
+					break;
+				case GameType.HERETIC:
+					gamename = "heretic";
+					break;
+				case GameType.HEXEN:
+					gamename = "hexen";
+					break;
+				case GameType.STRIFE:
+					gamename = "strife";
+					break;
+			}
+
 			// Find a resource named UDMF.cfg
 			string[] resnames = asm.GetManifestResourceNames();
 			foreach(string rn in resnames)
 			{
 				// Found it?
-				if(rn.EndsWith("doom.cfg", StringComparison.InvariantCultureIgnoreCase))
+				if(rn.EndsWith(string.Format("game_{0}.cfg", gamename), StringComparison.InvariantCultureIgnoreCase))
 				{
 					// Get a stream from the resource
 					Stream cfg = asm.GetManifestResourceStream(rn);
 					StreamReader cfgreader = new StreamReader(cfg, Encoding.ASCII);
 
 					// Load configuration from stream
-					config.InputConfiguration(cfgreader.ReadToEnd());
+					config.InputConfiguration(cfgreader.ReadToEnd(), true);
+
+					foundconfig = true;
 
 					break;
 				}
 			}
 
+			if (!foundconfig)
+				return false;
+
+			// Auto-detect map format based on configuration
+			foundconfig = false;
+			IDictionary mapformats = config.ReadSetting("mapformats", new Hashtable());
+
+			foreach (DictionaryEntry m in mapformats)
+			{
+				string cfgidentifier = config.ReadSetting(string.Format("mapformats.{0}.cfgidentifier", m.Key.ToString()), "");
+				Debug.WriteLine("##### " + cfgidentifier);
+				Match result = Regex.Match(General.Map.Config.EngineName, cfgidentifier);
+
+				if (result.Success)
+				{
+					mapformat = m.Key.ToString();
+					Debug.WriteLine("##### detected format: " + mapformat);
+					foundconfig = true;
+					break;
+				}
+			}
+
+			if (!foundconfig)
+				return false;
+
+			// Load game modes
+			gamemodes = new List<GameMode>();
+			IDictionary modes = config.ReadSetting(string.Format("mapformats.{0}.gamemodes", mapformat), new Hashtable());
+
+			foreach (DictionaryEntry m in modes)
+			{
+				Debug.WriteLine(string.Format("Game mode: {0}", m.Key.ToString()));
+				gamemodes.Add(new GameMode(config, string.Format("mapformats.{0}.gamemodes.{1}", mapformat, m.Key.ToString())));
+			}
+
+			// Load skill types
+			skilltypes = new Dictionary<int, SkillType>();
+			IDictionary types = config.ReadSetting("skills", new Hashtable());
+
+			foreach (DictionaryEntry t in types)
+			{
+				if (!((ListDictionary)t.Value).Contains("name") || !((ListDictionary)t.Value).Contains("flag"))
+					continue;
+
+				string name = config.ReadSetting(string.Format("skills.{0}.name", t.Key), "undefined");
+				string shortname = config.ReadSetting(string.Format("skills.{0}.shortname", t.Key), "");
+				float ammomulti = config.ReadSetting(string.Format("skills.{0}.ammomulti", t.Key), 1.0f);
+				string flag = config.ReadSetting(string.Format("skills.{0}.flag", t.Key), "");
+
+				skilltypes.Add(Int32.Parse(t.Key.ToString()), new SkillType(name, shortname, ammomulti, flag));
+			}
+
+			// Load ammunition types
+			ammunitiontypes = new List<AmmunitionType>();
+			types = config.ReadSetting("ammunition", new Hashtable());
+
+			foreach (DictionaryEntry t in types)
+			{
+				if (!((ListDictionary)t.Value).Contains("title") || !((ListDictionary)t.Value).Contains("dpu"))
+					continue;
+
+				string title = ((ListDictionary)t.Value)["title"].ToString();
+				int dpu = int.Parse(((ListDictionary)t.Value)["dpu"].ToString());
+				
+				ammunitiontypes.Add(new AmmunitionType(t.Key.ToString(), title, dpu));
+			}
+
+			// Load things
 			foreach (ThingCategory tc in General.Map.Data.ThingCategories)
 			{
 				foreach (ThingTypeInfo tti in tc.Things)
 				{
-					if (config.Root.Contains(tti.Index.ToString()))
+					if(config.SettingExists("things." + tti.Index.ToString()))
+					// if (config.Root.Contains("things." + tti.Index.ToString()))
 					{
-						config.WriteSetting(tti.Index.ToString() + ".name", tti.Title);
-						config.WriteSetting(tti.Index.ToString() + ".category", tti.Category.Title);
+						config.WriteSetting("things." + tti.Index.ToString() + ".name", tti.Title);
+						config.WriteSetting("things." + tti.Index.ToString() + ".category", tti.Category.Title);
 
 						if (!categories.Contains(tti.Category.Title))
 							categories.Add(tti.Category.Title);
 					}
 				}
 			}
+
+			return true;
 		}
 
-		// Checks if the flags of two things overlap (i.e. if they show up at the same time)
-		private static bool FlagsOverlap(Thing t1, Thing t2)
+		private GameMode GetGameModeByTitle(string title)
 		{
-			if (General.Map.Config.ThingFlagsCompare.Count < 1) return true; //mxd. Otherwise, no things will ever overlap when ThingFlagsCompare is empty
-			int overlappinggroups = 0;
-			int totalgroupscount = General.Map.Config.ThingFlagsCompare.Count; //mxd. Some groups can be ignored when unset...
+			foreach (GameMode gm in gamemodes)
+				if (gm.Title == title)
+					return gm;
 
-			// Go through all flags in all groups and check if they overlap
-			foreach (KeyValuePair<string, Dictionary<string, ThingFlagsCompare>> group in General.Map.Config.ThingFlagsCompare)
-			{
-				foreach (ThingFlagsCompare tfc in group.Value.Values)
-				{
-					int compareresult = tfc.Compare(t1, t2); //mxd
-					if (compareresult > 0)
-					{
-						overlappinggroups++;
-						break;
-					}
-
-					//mxd. Some groups can be ignored when unset...
-					if (compareresult == 0 && tfc.IgnoreGroupWhenUnset)
-					{
-						totalgroupscount--;
-					}
-				}
-			}
-
-			// All groups have to overlap for the things to show up at the same time
-			return (totalgroupscount > 0 && overlappinggroups == totalgroupscount);
+			return null;
 		}
 
 		#endregion
