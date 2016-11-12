@@ -306,30 +306,12 @@ namespace CodeImp.DoomBuilder.DifficultyAnalyzer
 
 			categories = new List<string>();
 
-			string gamename = "";
-
-			switch (General.Map.Config.GameType)
-			{
-				case GameType.DOOM:
-					gamename = "doom";
-					break;
-				case GameType.HERETIC:
-					gamename = "heretic";
-					break;
-				case GameType.HEXEN:
-					gamename = "hexen";
-					break;
-				case GameType.STRIFE:
-					gamename = "strife";
-					break;
-			}
-
 			// Find a resource named UDMF.cfg
 			string[] resnames = asm.GetManifestResourceNames();
 			foreach(string rn in resnames)
 			{
 				// Found it?
-				if(rn.EndsWith(string.Format("game_{0}.cfg", gamename), StringComparison.InvariantCultureIgnoreCase))
+				if(rn.EndsWith(string.Format("game_{0}.cfg", General.Map.Config.BaseGame.ToLower()), StringComparison.InvariantCultureIgnoreCase))
 				{
 					// Get a stream from the resource
 					Stream cfg = asm.GetManifestResourceStream(rn);
